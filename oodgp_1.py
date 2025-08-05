@@ -141,23 +141,29 @@ def prepare_otdd_datasets():
     thresh_train_idx = np.random.choice(len(train_data), n_thresh, replace=False)
     thresh_ood_idx = np.random.choice(len(ood_data), n_thresh, replace=False)
 
-    thresh_data = np.concatenate([train_data[thresh_train_idx], ood_data[thresh_ood_idx]])
-    thresh_labels = np.concatenate([train_labels[thresh_train_idx], ood_labels[thresh_ood_idx]])
+    thresh_id_data = train_data[thresh_train_idx]
+    thresh_id_labels = train_labels[thresh_train_idx]
+
+    thresh_ood_data = ood_data[thresh_ood_idx]
+    thresh_ood_labels = ood_labels[thresh_ood_idx]
 
     print(f"Dataset splits according to OTDD OOD strategy:")
     print(f"  Training set (no analog): {len(train_data)}")
     print(f"  Validation set (no analog): {len(val_data)}")
     print(f"  Test set (mixed): {len(test_data)} (in-dist: {len(test_in_data)}, analog: {len(ood_data)})")
     print(f"  OOD set (analog only): {len(ood_data)}")
-    print(f"  Threshold computation set: {len(thresh_data)} , split as {len(thresh_train_idx)} train + {len(thresh_ood_idx)} OOD")
+    print(f"  Threshold computation set: {len(thresh_id_data) + len(thresh_ood_data)} , split as {len(thresh_id_data)} train + {len(thresh_ood_data)} OOD")
 
     return (
         HisarModDataset(train_data, train_labels),
         HisarModDataset(val_data, val_labels),
         HisarModDataset(test_data, test_labels),
         HisarModDataset(ood_data, ood_labels),
-        HisarModDataset(thresh_data, thresh_labels)
+        HisarModDataset(thresh_id_data, thresh_id_labels),
+        HisarModDataset(thresh_ood_data, thresh_ood_labels)
     )
+
+    
 
 
 
@@ -413,13 +419,14 @@ def main():
     print(f"Using device: {device}")
     
     # Prepare datasets according to OTDD OOD strategy
-    train_ds, val_ds, test_ds, ood_ds, threshold_ds = prepare_otdd_datasets()
+    train_ds, val_ds, test_ds, ood_ds, threshold_id_ds, threshold_ood_ds = prepare_otdd_datasets()
     
     train_loader = DataLoader(train_ds, 64, shuffle=True)
     val_loader = DataLoader(val_ds, 64)
     test_loader = DataLoader(test_ds, 64)
     ood_loader = DataLoader(ood_ds, 64)
-    threshold_loader = DataLoader(threshold_ds, 64)
+    threshold_id_loader = DataLoader(threshold_id_ds, 64)
+    threshold_ood_loader = DataLoader(threshold_ood_ds, 64)
     
     # Train model (only on non-analog data)
     model = HisarModCNN(num_classes=4)
@@ -443,7 +450,7 @@ def main():
     detector = OTDDOODDetector(model, device)
     
     # ✅ UPDATED: Calibrate using pure ID vs OOD comparison
-    threshold = detector.calibrate_threshold(train_loader, ood_loader, maxsamples=5000)
+    threshold = detector.calibrate_threshold(threshold_id_loader, threshold_ood_loader, maxsamples=5000)
     
     # Evaluate on mixed test set
     metrics = evaluate_mixed_test_set(detector, test_loader, batch_size=100)
